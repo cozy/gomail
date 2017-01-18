@@ -2,6 +2,7 @@ package gomail
 
 import (
 	"crypto/tls"
+	"errors"
 	"io"
 	"net"
 	"net/smtp"
@@ -61,6 +62,9 @@ func (d *Dialer) Dial() (closer SendCloser, err error) {
 	var timeout time.Duration
 	if d.okdeadline {
 		timeout = d.deadline.Sub(time.Now())
+		if timeout <= 0 {
+			return nil, errors.New("gomail: timed out")
+		}
 	}
 
 	addr := net.JoinHostPort(d.opts.Host, strconv.Itoa(d.opts.Port))
