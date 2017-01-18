@@ -78,12 +78,12 @@ func (d *Dialer) Dial() (closer SendCloser, err error) {
 		}
 	}()
 
-	if d.okdeadline {
-		conn.SetDeadline(d.deadline)
-	}
-
 	if !d.opts.DisableTLS {
 		conn = tlsClient(conn, d.tlsConfig())
+	}
+
+	if d.okdeadline {
+		conn.SetDeadline(d.deadline)
 	}
 
 	c, err := smtpNewClient(conn, d.opts.Host)
