@@ -702,7 +702,7 @@ func getBoundaries(t *testing.T, count int, m string) []string {
 	return []string{""}
 }
 
-var boundaryRegExp = regexp.MustCompile("boundary=(\\w+)")
+var boundaryRegExp = regexp.MustCompile(`boundary=(\w+)`)
 
 func mockCopyFile(name string) (string, FileSetting) {
 	return name, SetCopyFunc(func(w io.Writer) error {

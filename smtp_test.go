@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/smtp"
 	"reflect"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -23,11 +24,16 @@ var (
 	testAuth    = smtp.PlainAuth("", testUser, testPwd, testHost)
 )
 
-func TestDialer(t *testing.T) {
-	d := NewDialer(testHost, testPort, "user", "pwd")
+func TestDialerDisableTLS(t *testing.T) {
+	o := &DialerOptions{
+		Host:       testHost,
+		Port:       testPort,
+		Username:   "user",
+		Password:   "pwd",
+		DisableTLS: true,
+	}
+	d := NewDialer(o)
 	testSendMail(t, d, []string{
-		"Extension STARTTLS",
-		"StartTLS",
 		"Extension AUTH",
 		"Auth",
 		"Mail " + testFrom,
@@ -42,7 +48,13 @@ func TestDialer(t *testing.T) {
 }
 
 func TestDialerSSL(t *testing.T) {
-	d := NewDialer(testHost, testSSLPort, "user", "pwd")
+	o := &DialerOptions{
+		Host:     testHost,
+		Port:     testSSLPort,
+		Username: "user",
+		Password: "pwd",
+	}
+	d := NewDialer(o)
 	testSendMail(t, d, []string{
 		"Extension AUTH",
 		"Auth",
@@ -58,13 +70,16 @@ func TestDialerSSL(t *testing.T) {
 }
 
 func TestDialerConfig(t *testing.T) {
-	d := NewDialer(testHost, testPort, "user", "pwd")
-	d.LocalName = "test"
-	d.TLSConfig = testConfig
+	o := &DialerOptions{
+		Host:      testHost,
+		Port:      testPort,
+		Username:  "user",
+		Password:  "pwd",
+		LocalName: "test",
+	}
+	d := NewDialerWithTLSConfig(o, testConfig)
 	testSendMail(t, d, []string{
 		"Hello test",
-		"Extension STARTTLS",
-		"StartTLS",
 		"Extension AUTH",
 		"Auth",
 		"Mail " + testFrom,
@@ -79,9 +94,14 @@ func TestDialerConfig(t *testing.T) {
 }
 
 func TestDialerSSLConfig(t *testing.T) {
-	d := NewDialer(testHost, testSSLPort, "user", "pwd")
-	d.LocalName = "test"
-	d.TLSConfig = testConfig
+	o := &DialerOptions{
+		Host:      testHost,
+		Port:      testSSLPort,
+		Username:  "user",
+		Password:  "pwd",
+		LocalName: "test",
+	}
+	d := NewDialerWithTLSConfig(o, testConfig)
 	testSendMail(t, d, []string{
 		"Hello test",
 		"Extension AUTH",
@@ -98,13 +118,12 @@ func TestDialerSSLConfig(t *testing.T) {
 }
 
 func TestDialerNoAuth(t *testing.T) {
-	d := &Dialer{
+	o := &DialerOptions{
 		Host: testHost,
 		Port: testPort,
 	}
+	d := NewDialer(o)
 	testSendMail(t, d, []string{
-		"Extension STARTTLS",
-		"StartTLS",
 		"Mail " + testFrom,
 		"Rcpt " + testTo1,
 		"Rcpt " + testTo2,
@@ -117,16 +136,13 @@ func TestDialerNoAuth(t *testing.T) {
 }
 
 func TestDialerTimeout(t *testing.T) {
-	d := &Dialer{
+	o := &DialerOptions{
 		Host: testHost,
 		Port: testPort,
 	}
+	d := NewDialer(o)
 	testSendMailTimeout(t, d, []string{
-		"Extension STARTTLS",
-		"StartTLS",
 		"Mail " + testFrom,
-		"Extension STARTTLS",
-		"StartTLS",
 		"Mail " + testFrom,
 		"Rcpt " + testTo1,
 		"Rcpt " + testTo2,
@@ -243,8 +259,8 @@ func doTestSendMail(t *testing.T, d *Dialer, want []string, timeout bool) {
 	testClient := &mockClient{
 		t:       t,
 		want:    want,
-		addr:    addr(d.Host, d.Port),
-		config:  d.TLSConfig,
+		addr:    net.JoinHostPort(d.opts.Host, strconv.Itoa(d.opts.Port)),
+		config:  d.tls,
 		timeout: timeout,
 	}
 

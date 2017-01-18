@@ -1,4 +1,4 @@
-package gomail_test
+package gomail
 
 import (
 	"fmt"
@@ -6,12 +6,10 @@ import (
 	"io"
 	"log"
 	"time"
-
-	"gopkg.in/gomail.v2"
 )
 
 func Example() {
-	m := gomail.NewMessage()
+	m := NewMessage()
 	m.SetHeader("From", "alex@example.com")
 	m.SetHeader("To", "bob@example.com", "cora@example.com")
 	m.SetAddressHeader("Cc", "dan@example.com", "Dan")
@@ -19,7 +17,13 @@ func Example() {
 	m.SetBody("text/html", "Hello <b>Bob</b> and <i>Cora</i>!")
 	m.Attach("/home/Alex/lolcat.jpg")
 
-	d := gomail.NewDialer("smtp.example.com", 587, "user", "123456")
+	o := &DialerOptions{
+		Host:     "smtp.example.com",
+		Port:     587,
+		Username: "user",
+		Password: "123456",
+	}
+	d := NewDialer(o)
 
 	// Send the email to Bob, Cora and Dan.
 	if err := d.DialAndSend(m); err != nil {
@@ -29,12 +33,18 @@ func Example() {
 
 // A daemon that listens to a channel and sends all incoming messages.
 func Example_daemon() {
-	ch := make(chan *gomail.Message)
+	ch := make(chan *Message)
 
 	go func() {
-		d := gomail.NewDialer("smtp.example.com", 587, "user", "123456")
+		o := &DialerOptions{
+			Host:     "smtp.example.com",
+			Port:     587,
+			Username: "user",
+			Password: "123456",
+		}
+		d := NewDialer(o)
 
-		var s gomail.SendCloser
+		var s SendCloser
 		var err error
 		open := false
 		for {
@@ -49,7 +59,7 @@ func Example_daemon() {
 					}
 					open = true
 				}
-				if err := gomail.Send(s, m); err != nil {
+				if err := Send(s, m); err != nil {
 					log.Print(err)
 				}
 			// Close the connection to the SMTP server if no email was sent in
@@ -79,20 +89,26 @@ func Example_newsletter() {
 		Address string
 	}
 
-	d := gomail.NewDialer("smtp.example.com", 587, "user", "123456")
+	o := &DialerOptions{
+		Host:     "smtp.example.com",
+		Port:     587,
+		Username: "user",
+		Password: "123456",
+	}
+	d := NewDialer(o)
 	s, err := d.Dial()
 	if err != nil {
 		panic(err)
 	}
 
-	m := gomail.NewMessage()
+	m := NewMessage()
 	for _, r := range list {
 		m.SetHeader("From", "no-reply@example.com")
 		m.SetAddressHeader("To", r.Address, r.Name)
 		m.SetHeader("Subject", "Newsletter #1")
 		m.SetBody("text/html", fmt.Sprintf("Hello %s!", r.Name))
 
-		if err := gomail.Send(s, m); err != nil {
+		if err := Send(s, m); err != nil {
 			log.Printf("Could not send email to %q: %v", r.Address, err)
 		}
 		m.Reset()
@@ -101,13 +117,14 @@ func Example_newsletter() {
 
 // Send an email using a local SMTP server.
 func Example_noAuth() {
-	m := gomail.NewMessage()
+	m := NewMessage()
 	m.SetHeader("From", "from@example.com")
 	m.SetHeader("To", "to@example.com")
 	m.SetHeader("Subject", "Hello!")
 	m.SetBody("text/plain", "Hello!")
 
-	d := gomail.Dialer{Host: "localhost", Port: 587}
+	o := &DialerOptions{Host: "localhost", Port: 587}
+	d := NewDialer(o)
 	if err := d.DialAndSend(m); err != nil {
 		panic(err)
 	}
@@ -115,13 +132,13 @@ func Example_noAuth() {
 
 // Send an email using an API or postfix.
 func Example_noSMTP() {
-	m := gomail.NewMessage()
+	m := NewMessage()
 	m.SetHeader("From", "from@example.com")
 	m.SetHeader("To", "to@example.com")
 	m.SetHeader("Subject", "Hello!")
 	m.SetBody("text/plain", "Hello!")
 
-	s := gomail.SendFunc(func(from string, to []string, msg io.WriterTo) error {
+	s := SendFunc(func(from string, to []string, msg io.WriterTo) error {
 		// Implements you email-sending function, for example by calling
 		// an API, or running postfix, etc.
 		fmt.Println("From:", from)
@@ -129,7 +146,7 @@ func Example_noSMTP() {
 		return nil
 	})
 
-	if err := gomail.Send(s, m); err != nil {
+	if err := Send(s, m); err != nil {
 		panic(err)
 	}
 	// Output:
@@ -137,10 +154,10 @@ func Example_noSMTP() {
 	// To: [to@example.com]
 }
 
-var m *gomail.Message
+var m *Message
 
 func ExampleSetCopyFunc() {
-	m.Attach("foo.txt", gomail.SetCopyFunc(func(w io.Writer) error {
+	m.Attach("foo.txt", SetCopyFunc(func(w io.Writer) error {
 		_, err := w.Write([]byte("Content of foo.txt"))
 		return err
 	}))
@@ -148,11 +165,11 @@ func ExampleSetCopyFunc() {
 
 func ExampleSetHeader() {
 	h := map[string][]string{"Content-ID": {"<foo@bar.mail>"}}
-	m.Attach("foo.jpg", gomail.SetHeader(h))
+	m.Attach("foo.jpg", SetHeader(h))
 }
 
 func ExampleRename() {
-	m.Attach("/tmp/0000146.jpg", gomail.Rename("picture.jpg"))
+	m.Attach("/tmp/0000146.jpg", Rename("picture.jpg"))
 }
 
 func ExampleMessage_AddAlternative() {
@@ -211,13 +228,13 @@ func ExampleMessage_SetHeaders() {
 }
 
 func ExampleSetCharset() {
-	m = gomail.NewMessage(gomail.SetCharset("ISO-8859-1"))
+	m = NewMessage(SetCharset("ISO-8859-1"))
 }
 
 func ExampleSetEncoding() {
-	m = gomail.NewMessage(gomail.SetEncoding(gomail.Base64))
+	m = NewMessage(SetEncoding(Base64))
 }
 
 func ExampleSetPartEncoding() {
-	m.SetBody("text/plain", "Hello!", gomail.SetPartEncoding(gomail.Unencoded))
+	m.SetBody("text/plain", "Hello!", SetPartEncoding(Unencoded))
 }
