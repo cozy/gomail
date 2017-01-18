@@ -59,12 +59,9 @@ func (d *Dialer) SetDeadline(deadline time.Time) {
 // Dial dials and authenticates to an SMTP server. The returned SendCloser
 // should be closed when done using it.
 func (d *Dialer) Dial() (closer SendCloser, err error) {
-	var timeout time.Duration
-	if d.okdeadline {
-		timeout = d.deadline.Sub(time.Now())
-		if timeout <= 0 {
-			return nil, errors.New("gomail: timed out")
-		}
+	timeout, err := d.checkDeadline()
+	if err != nil {
+		return nil, err
 	}
 
 	addr := net.JoinHostPort(d.opts.Host, strconv.Itoa(d.opts.Port))
@@ -138,6 +135,17 @@ func (d *Dialer) tlsConfig() *tls.Config {
 	return d.tls
 }
 
+func (d *Dialer) checkDeadline() (time.Duration, error) {
+	var timeout time.Duration
+	if d.okdeadline {
+		timeout = d.deadline.Sub(time.Now())
+		if timeout <= 0 {
+			return 0, errors.New("gomail: timed out")
+		}
+	}
+	return timeout, nil
+}
+
 // DialAndSend opens a connection to the SMTP server, sends the given emails and
 // closes the connection.
 func (d *Dialer) DialAndSend(m ...*Message) error {
@@ -155,6 +163,10 @@ type smtpSender struct {
 }
 
 func (c *smtpSender) Send(from string, to []string, msg io.WriterTo) error {
+	if _, err := c.d.checkDeadline(); err != nil {
+		return err
+	}
+
 	if err := c.Mail(from); err != nil {
 		if err == io.EOF {
 			// This is probably due to a timeout, so reconnect and try again.
