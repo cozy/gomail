@@ -2,111 +2,125 @@ package gomail
 
 import (
 	"crypto/tls"
-	"fmt"
+	"errors"
 	"io"
 	"net"
 	"net/smtp"
+	"strconv"
 	"strings"
 	"time"
 )
 
-// A Dialer is a dialer to an SMTP server.
-type Dialer struct {
+// DialerOptions is a serializable struct containing all SMTP the options of
+// the dialer to work.
+type DialerOptions struct {
 	// Host represents the host of the SMTP server.
-	Host string
+	Host string `json:"host"`
 	// Port represents the port of the SMTP server.
-	Port int
+	Port int `json:"port"`
 	// Username is the username to use to authenticate to the SMTP server.
-	Username string
+	Username string `json:"username"`
 	// Password is the password to use to authenticate to the SMTP server.
-	Password string
-	// Auth represents the authentication mechanism used to authenticate to the
-	// SMTP server.
-	Auth smtp.Auth
-	// SSL defines whether an SSL connection is used. It should be false in
-	// most cases since the authentication mechanism should use the STARTTLS
-	// extension instead.
-	SSL bool
-	// TSLConfig represents the TLS configuration used for the TLS (when the
-	// STARTTLS extension is used) or SSL connection.
-	TLSConfig *tls.Config
+	Password string `json:"password"`
+	// DisableTLS defines whether an TLS connection is used.
+	DisableTLS bool `json:"disable_tls"`
 	// LocalName is the hostname sent to the SMTP server with the HELO command.
 	// By default, "localhost" is sent.
-	LocalName string
+	LocalName string `json:"local_name"`
 }
 
-// NewDialer returns a new SMTP Dialer. The given parameters are used to connect
-// to the SMTP server.
-func NewDialer(host string, port int, username, password string) *Dialer {
-	return &Dialer{
-		Host:     host,
-		Port:     port,
-		Username: username,
-		Password: password,
-		SSL:      port == 465,
-	}
+// A Dialer is a dialer to an SMTP server.
+type Dialer struct {
+	opts *DialerOptions
+	tls  *tls.Config
+
+	deadline   time.Time
+	okdeadline bool
 }
 
-// NewPlainDialer returns a new SMTP Dialer. The given parameters are used to
-// connect to the SMTP server.
-//
-// Deprecated: Use NewDialer instead.
-func NewPlainDialer(host string, port int, username, password string) *Dialer {
-	return NewDialer(host, port, username, password)
+// NewDialer returns a new SMTP Dialer with the specified options
+func NewDialer(opts *DialerOptions) *Dialer {
+	return &Dialer{opts: opts}
+}
+
+// NewDialerWithTLSConfig returns a new SMTP Dialer with the specified options.
+// The specified tls configuration is used by the dialer to create the TLS
+// client.
+func NewDialerWithTLSConfig(opts *DialerOptions, tls *tls.Config) *Dialer {
+	return &Dialer{opts: opts, tls: tls}
+}
+
+// SetDeadline adds a deadline to the dial process on all the i/o operations.
+func (d *Dialer) SetDeadline(deadline time.Time) {
+	d.deadline = deadline
+	d.okdeadline = true
 }
 
 // Dial dials and authenticates to an SMTP server. The returned SendCloser
 // should be closed when done using it.
-func (d *Dialer) Dial() (SendCloser, error) {
-	conn, err := netDialTimeout("tcp", addr(d.Host, d.Port), 10*time.Second)
+func (d *Dialer) Dial() (closer SendCloser, err error) {
+	timeout, err := d.checkDeadline()
 	if err != nil {
 		return nil, err
 	}
 
-	if d.SSL {
+	addr := net.JoinHostPort(d.opts.Host, strconv.Itoa(d.opts.Port))
+	conn, err := netDialTimeout("tcp", addr, timeout)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			conn.Close()
+		}
+	}()
+
+	if !d.opts.DisableTLS {
 		conn = tlsClient(conn, d.tlsConfig())
 	}
 
-	c, err := smtpNewClient(conn, d.Host)
+	if d.okdeadline {
+		conn.SetDeadline(d.deadline)
+	}
+
+	c, err := smtpNewClient(conn, d.opts.Host)
 	if err != nil {
 		return nil, err
 	}
 
-	if d.LocalName != "" {
-		if err := c.Hello(d.LocalName); err != nil {
+	if d.opts.LocalName != "" {
+		if err = c.Hello(d.opts.LocalName); err != nil {
 			return nil, err
 		}
 	}
 
-	if !d.SSL {
-		if ok, _ := c.Extension("STARTTLS"); ok {
-			if err := c.StartTLS(d.tlsConfig()); err != nil {
-				c.Close()
-				return nil, err
+	var auth smtp.Auth
+	if d.opts.Username != "" || d.opts.Password != "" {
+		if ok, auths := c.Extension("AUTH"); !ok {
+			auth = nil
+		} else if strings.Contains(auths, "CRAM-MD5") {
+			auth = smtp.CRAMMD5Auth(
+				d.opts.Username,
+				d.opts.Password,
+			)
+		} else if strings.Contains(auths, "LOGIN") && !strings.Contains(auths, "PLAIN") {
+			auth = &loginAuth{
+				username: d.opts.Username,
+				password: d.opts.Password,
+				host:     d.opts.Host,
 			}
+		} else {
+			auth = smtp.PlainAuth(
+				"",
+				d.opts.Username,
+				d.opts.Password,
+				d.opts.Host,
+			)
 		}
 	}
 
-	if d.Auth == nil && d.Username != "" {
-		if ok, auths := c.Extension("AUTH"); ok {
-			if strings.Contains(auths, "CRAM-MD5") {
-				d.Auth = smtp.CRAMMD5Auth(d.Username, d.Password)
-			} else if strings.Contains(auths, "LOGIN") &&
-				!strings.Contains(auths, "PLAIN") {
-				d.Auth = &loginAuth{
-					username: d.Username,
-					password: d.Password,
-					host:     d.Host,
-				}
-			} else {
-				d.Auth = smtp.PlainAuth("", d.Username, d.Password, d.Host)
-			}
-		}
-	}
-
-	if d.Auth != nil {
-		if err = c.Auth(d.Auth); err != nil {
-			c.Close()
+	if auth != nil {
+		if err = c.Auth(auth); err != nil {
 			return nil, err
 		}
 	}
@@ -115,14 +129,21 @@ func (d *Dialer) Dial() (SendCloser, error) {
 }
 
 func (d *Dialer) tlsConfig() *tls.Config {
-	if d.TLSConfig == nil {
-		return &tls.Config{ServerName: d.Host}
+	if d.tls == nil {
+		return &tls.Config{ServerName: d.opts.Host}
 	}
-	return d.TLSConfig
+	return d.tls
 }
 
-func addr(host string, port int) string {
-	return fmt.Sprintf("%s:%d", host, port)
+func (d *Dialer) checkDeadline() (time.Duration, error) {
+	var timeout time.Duration
+	if d.okdeadline {
+		timeout = d.deadline.Sub(time.Now())
+		if timeout <= 0 {
+			return 0, errors.New("gomail: timed out")
+		}
+	}
+	return timeout, nil
 }
 
 // DialAndSend opens a connection to the SMTP server, sends the given emails and
@@ -133,7 +154,6 @@ func (d *Dialer) DialAndSend(m ...*Message) error {
 		return err
 	}
 	defer s.Close()
-
 	return Send(s, m...)
 }
 
@@ -143,6 +163,10 @@ type smtpSender struct {
 }
 
 func (c *smtpSender) Send(from string, to []string, msg io.WriterTo) error {
+	if _, err := c.d.checkDeadline(); err != nil {
+		return err
+	}
+
 	if err := c.Mail(from); err != nil {
 		if err == io.EOF {
 			// This is probably due to a timeout, so reconnect and try again.
