@@ -56,6 +56,8 @@ func TestDialerSSL(t *testing.T) {
 	}
 	d := NewDialer(o)
 	testSendMail(t, d, []string{
+		"Extension STARTTLS",
+		"StartTLS",
 		"Extension AUTH",
 		"Auth",
 		"Mail " + testFrom,
@@ -80,6 +82,8 @@ func TestDialerConfig(t *testing.T) {
 	d := NewDialerWithTLSConfig(o, testConfig)
 	testSendMail(t, d, []string{
 		"Hello test",
+		"Extension STARTTLS",
+		"StartTLS",
 		"Extension AUTH",
 		"Auth",
 		"Mail " + testFrom,
@@ -104,6 +108,8 @@ func TestDialerSSLConfig(t *testing.T) {
 	d := NewDialerWithTLSConfig(o, testConfig)
 	testSendMail(t, d, []string{
 		"Hello test",
+		"Extension STARTTLS",
+		"StartTLS",
 		"Extension AUTH",
 		"Auth",
 		"Mail " + testFrom,
@@ -124,6 +130,8 @@ func TestDialerNoAuth(t *testing.T) {
 	}
 	d := NewDialer(o)
 	testSendMail(t, d, []string{
+		"Extension STARTTLS",
+		"StartTLS",
 		"Mail " + testFrom,
 		"Rcpt " + testTo1,
 		"Rcpt " + testTo2,
@@ -142,7 +150,11 @@ func TestDialerTimeout(t *testing.T) {
 	}
 	d := NewDialer(o)
 	testSendMailTimeout(t, d, []string{
+		"Extension STARTTLS",
+		"StartTLS",
 		"Mail " + testFrom,
+		"Extension STARTTLS",
+		"StartTLS",
 		"Mail " + testFrom,
 		"Rcpt " + testTo1,
 		"Rcpt " + testTo2,
