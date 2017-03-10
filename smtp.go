@@ -22,7 +22,11 @@ type DialerOptions struct {
 	Username string `json:"username"`
 	// Password is the password to use to authenticate to the SMTP server.
 	Password string `json:"password"`
-	// DisableTLS defines whether an TLS connection is used.
+	// NativeTLS defines whether or not the client should use directly use a TLS
+	// client (meaning: no STARTTLS)
+	NativeTLS bool `json:"native_tls"`
+	// DisableTLS defines whether or not the client should continue if the server
+	// does not offer the ability to start a TLS connection.
 	DisableTLS bool `json:"disable_tls"`
 	// LocalName is the hostname sent to the SMTP server with the HELO command.
 	// By default, "localhost" is sent.
@@ -59,6 +63,11 @@ func (d *Dialer) SetDeadline(deadline time.Time) {
 // Dial dials and authenticates to an SMTP server. The returned SendCloser
 // should be closed when done using it.
 func (d *Dialer) Dial() (closer SendCloser, err error) {
+	if d.opts.DisableTLS && d.opts.NativeTLS {
+		return nil,
+			errors.New("gomail: bad options (asking for disable and native TLS is not permitted)")
+	}
+
 	timeout, err := d.checkDeadline()
 	if err != nil {
 		return nil, err
@@ -75,7 +84,7 @@ func (d *Dialer) Dial() (closer SendCloser, err error) {
 		}
 	}()
 
-	if !d.opts.DisableTLS {
+	if d.opts.NativeTLS {
 		conn = tlsClient(conn, d.tlsConfig())
 	}
 
@@ -90,6 +99,18 @@ func (d *Dialer) Dial() (closer SendCloser, err error) {
 
 	if d.opts.LocalName != "" {
 		if err = c.Hello(d.opts.LocalName); err != nil {
+			return nil, err
+		}
+	}
+
+	startTLS := false
+	if !d.opts.NativeTLS && !d.opts.DisableTLS {
+		if startTLS, _ = c.Extension("STARTTLS"); !startTLS {
+			return nil, errors.New("gomail: server does not offer the STARTTLS extension")
+		}
+	}
+	if startTLS {
+		if err := c.StartTLS(d.tlsConfig()); err != nil {
 			return nil, err
 		}
 	}
