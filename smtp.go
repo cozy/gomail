@@ -30,7 +30,7 @@ type DialerOptions struct {
 	DisableTLS bool `json:"disable_tls"`
 	// SkipCertificateValidation can be set true to skip the certificate
 	// validation when using TLS.
-	SkipCertificateValidation bool `json:skip_certificate_validity`
+	SkipCertificateValidation bool `json:skip_certificate_validation`
 	// LocalName is the hostname sent to the SMTP server with the HELO command.
 	// By default, "localhost" is sent.
 	LocalName string `json:"local_name"`
