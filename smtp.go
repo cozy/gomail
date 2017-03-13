@@ -28,6 +28,9 @@ type DialerOptions struct {
 	// DisableTLS defines whether or not the client should continue if the server
 	// does not offer the ability to start a TLS connection.
 	DisableTLS bool `json:"disable_tls"`
+	// SkipCertificateValidation can be set true to skip the certificate
+	// validation when using TLS.
+	SkipCertificateValidation bool `json:skip_certificate_validity`
 	// LocalName is the hostname sent to the SMTP server with the HELO command.
 	// By default, "localhost" is sent.
 	LocalName string `json:"local_name"`
@@ -150,8 +153,12 @@ func (d *Dialer) Dial() (closer SendCloser, err error) {
 }
 
 func (d *Dialer) tlsConfig() *tls.Config {
-	if d.tls == nil {
-		return &tls.Config{ServerName: d.opts.Host}
+	if d.tls != nil {
+		return d.tls
+	}
+	d.tls = &tls.Config{ServerName: d.opts.Host}
+	if d.opts.SkipCertificateValidation {
+		d.tls.InsecureSkipVerify = true
 	}
 	return d.tls
 }
